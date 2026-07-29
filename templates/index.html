@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<!-- v2-fix: dark theme with !important overrides -->
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GiyasPDFTools — Konverter & Manipulator PDF</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+    <style>
+        :root{
+            --ink:#0E1F33;
+            --panel:#14304D;
+            --panel-2:#193A5C;
+            --grid-line:#23456A;
+            --paper:#EDF1F5;
+            --muted:#8FA3B8;
+            --amber:#E8A33D;
+            --amber-dark:#C9842A;
+            --teal:#4FD1C5;
+            --teal-dark:#33A99E;
+            --rose:#E2637A;
+            --rose-dark:#C24863;
+            --radius:10px;
+            --font-display:'Space Grotesk', sans-serif;
+            --font-body:'Inter', sans-serif;
+            --font-mono:'JetBrains Mono', monospace;
+        }
+
+        *{ box-sizing:border-box; }
+
+        html, body{
+            background-color: var(--ink) !important;
+            background-image:
+                linear-gradient(var(--grid-line) 1px, transparent 1px),
+                linear-gradient(90deg, var(--grid-line) 1px, transparent 1px) !important;
+            background-size: 42px 42px !important;
+            background-attachment: fixed !important;
+            color: var(--paper) !important;
+            font-family: var(--font-body);
+            -webkit-font-smoothing: antialiased;
+            min-height: 100vh;
+        }
+
+        h1,h2,h3,h4,h5{ font-family: var(--font-display); letter-spacing: -0.01em; color: var(--paper) !important; }
+
+        a{ color: var(--teal); }
+
+        /* ---------- Navbar ---------- */
+        .navbar{
+            background: rgba(14,31,51,0.85) !important;
+            backdrop-filter: blur(8px);
+            border-bottom: 1px solid var(--grid-line);
+            padding-top: .9rem;
+            padding-bottom: .9rem;
+            box-shadow: none !important;
+        }
+        .navbar-brand{
+            font-family: var(--font-display);
+            font-weight: 700;
+            font-size: 1.25rem;
+            color: var(--paper) !important;
+            letter-spacing: -0.02em;
+        }
+        .navbar-brand::before{
+            content: "▣";
+            color: var(--amber);
+            margin-right: .5rem;
+            font-size: 1rem;
+        }
+        .navbar .nav-link{
+            font-family: var(--font-mono);
+            font-size: .8rem;
+            letter-spacing: .04em;
+            text-transform: uppercase;
+            color: var(--muted) !important;
+            padding: .4rem .9rem !important;
+        }
+        .navbar .nav-link.active, .navbar .nav-link:hover{ color: var(--paper) !important; }
+
+        /* ---------- Hero ---------- */
+        .hero-section{
+            background: transparent !important;
+            padding: 5.5rem 0 4rem;
+            position: relative;
+            overflow: hidden;
+            box-shadow: none !important;
+        }
+        .hero-section::after{
+            content:"";
+            position:absolute;
+            top:-120px; right:-120px;
+            width:340px; height:340px;
+            border-radius:50%;
+            background: radial-gradient(circle, rgba(232,163,61,0.18), transparent 70%);
+            pointer-events:none;
+        }
+        .hero-eyebrow{
+            display:inline-flex;
+            align-items:center;
+            gap:.5rem;
+            font-family: var(--font-mono);
+            font-size: .75rem;
+            letter-spacing: .12em;
+            text-transform: uppercase;
+            color: var(--teal);
+            border: 1px solid var(--grid-line);
+            background: rgba(79,209,197,0.07);
+            padding: .35rem .8rem;
+            border-radius: 999px;
+            margin-bottom: 1.25rem;
+        }
+        .hero-eyebrow .dot{
+            width:7px; height:7px; border-radius:50%;
+            background: var(--teal);
+            box-shadow: 0 0 0 0 rgba(79,209,197,0.6);
+            animation: pulse 2.2s infinite;
+        }
+        @keyframes pulse{
+            0%{ box-shadow: 0 0 0 0 rgba(79,209,197,0.55); }
+            70%{ box-shadow: 0 0 0 8px rgba(79,209,197,0); }
+            100%{ box-shadow: 0 0 0 0 rgba(79,209,197,0); }
+        }
+        .hero-section h1{
+            font-size: 2.75rem;
+            font-weight: 700;
+            color: var(--paper) !important;
+            position: relative;
+            z-index: 1;
+        }
+        .hero-section .lead{
+            font-family: var(--font-body);
+            color: var(--muted) !important;
+            font-size: 1.1rem;
+            max-width: 540px;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* ---------- Alerts ---------- */
+        .alert-messages{ margin-top: 1rem; }
+        .alert{
+            font-family: var(--font-mono);
+            font-size: .85rem;
+            border-radius: var(--radius);
+            border: 1px solid var(--grid-line);
+            background: var(--panel);
+            color: var(--paper);
+        }
+        .alert-success{ border-color: var(--teal-dark); }
+        .alert-danger, .alert-warning{ border-color: var(--rose-dark); }
+
+        /* ---------- Section heading ---------- */
+        #features h2{
+            color: var(--paper) !important;
+            font-weight: 600;
+            font-size: 1.6rem;
+        }
+        #features h2::before{
+            content: "/ ";
+            color: var(--amber);
+        }
+
+        /* ---------- Tool cards ---------- */
+        .card-feature{
+            background: var(--panel) !important;
+            border: 1px solid var(--grid-line);
+            border-radius: var(--radius);
+            cursor: pointer;
+            position: relative;
+            height: 100%;
+            transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+            overflow: hidden;
+        }
+        .card-feature::before{
+            content:"";
+            position:absolute;
+            top:0; left:0; right:0;
+            height: 3px;
+            background: var(--accent, var(--amber));
+            opacity: .85;
+        }
+        .card-feature:hover{
+            transform: translateY(-4px);
+            border-color: var(--accent, var(--amber));
+            box-shadow: 0 14px 30px -12px rgba(0,0,0,0.45);
+        }
+        .card-feature[data-cat="convert"]{ --accent: var(--amber); }
+        .card-feature[data-cat="edit"]{ --accent: var(--teal); }
+        .card-feature[data-cat="optimize"]{ --accent: var(--rose); }
+
+        .card-feature .card-body{ padding: 1.6rem 1.3rem 1.4rem; }
+        .card-feature .card-tag{
+            font-family: var(--font-mono);
+            font-size: .68rem;
+            letter-spacing: .1em;
+            text-transform: uppercase;
+            color: var(--accent, var(--amber));
+            margin-bottom: .7rem;
+            display:block;
+        }
+        .card-feature .icon{
+            font-size: 1.6rem;
+            color: var(--accent, var(--amber));
+            margin-bottom: .85rem;
+            display:block;
+        }
+        .card-feature .card-title{
+            color: var(--paper) !important;
+            font-size: 1.05rem;
+            font-weight: 600;
+            margin-bottom: .4rem;
+        }
+        .card-feature .card-text{
+            color: var(--muted) !important;
+            font-size: .85rem;
+            margin-bottom: 0;
+        }
+
+        /* ---------- Modals ---------- */
+        .modal-content{
+            background: var(--panel) !important;
+            border: 1px solid var(--grid-line);
+            border-radius: var(--radius);
+            color: var(--paper) !important;
+        }
+        .modal-header{
+            border-bottom: 1px solid var(--grid-line);
+            border-top-left-radius: var(--radius);
+            border-top-right-radius: var(--radius);
+            background: var(--panel-2) !important;
+        }
+        .modal-header.gp-amber{ box-shadow: inset 3px 0 0 var(--amber); }
+        .modal-header.gp-teal{ box-shadow: inset 3px 0 0 var(--teal); }
+        .modal-header.gp-rose{ box-shadow: inset 3px 0 0 var(--rose); }
+        .modal-title{
+            font-family: var(--font-display);
+            font-size: 1.05rem;
+            display:flex; align-items:center; gap:.55rem;
+        }
+        .modal-body{ padding: 1.5rem; }
+        .modal-body label{
+            font-family: var(--font-mono);
+            font-size: .72rem;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            color: var(--muted);
+            margin-bottom: .4rem;
+        }
+        .modal-body small.text-muted{ color: var(--muted) !important; font-size: .78rem; }
+
+        .form-control, .form-select{
+            background: var(--ink);
+            border: 1px solid var(--grid-line);
+            color: var(--paper);
+            border-radius: 8px;
+            padding: .6rem .75rem;
+        }
+        .form-control:focus, .form-select:focus{
+            background: var(--ink);
+            color: var(--paper);
+            border-color: var(--amber);
+            box-shadow: 0 0 0 3px rgba(232,163,61,0.2);
+        }
+        .form-control::file-selector-button{
+            background: var(--panel-2);
+            color: var(--paper);
+            border: none;
+            border-right: 1px solid var(--grid-line);
+            padding: .55rem .9rem;
+            margin: -0.6rem .75rem -0.6rem -0.75rem;
+            border-radius: 8px 0 0 8px;
+        }
+        .form-range{ accent-color: var(--amber); }
+
+        .btn-close{ filter: invert(1) brightness(2); opacity: .8; }
+        .btn-close:hover{ opacity: 1; }
+
+        /* button accent variants, used instead of bootstrap's btn-danger/btn-primary */
+        .gp-btn{
+            border: none;
+            border-radius: 8px;
+            font-family: var(--font-mono);
+            font-size: .82rem;
+            letter-spacing: .04em;
+            text-transform: uppercase;
+            padding: .7rem 1rem;
+            color: var(--ink);
+            transition: filter .15s ease, transform .1s ease;
+        }
+        .gp-btn:hover{ filter: brightness(1.08); }
+        .gp-btn:active{ transform: scale(0.98); }
+        .gp-btn:disabled{ filter: grayscale(.3) brightness(.85); }
+        .gp-amber-btn{ background: var(--amber); }
+        .gp-teal-btn{ background: var(--teal); }
+        .gp-rose-btn{ background: var(--rose); }
+        .gp-btn.btn-success{ background: #3FBF7F !important; color: var(--ink); }
+        .gp-btn.btn-danger{ background: var(--rose-dark) !important; color: var(--paper); }
+
+        .form-error-message{ font-family: var(--font-mono); font-size: .78rem; }
+
+        /* ---------- Footer ---------- */
+        .footer{
+            background: var(--ink) !important;
+            border-top: 1px solid var(--grid-line);
+            margin-top: 4rem;
+            padding: 2.2rem 0;
+            text-align: center;
+            color: var(--muted) !important;
+            font-size: .85rem;
+        }
+        .footer p{ margin:0; }
+
+        @media (max-width: 576px){
+            .hero-section h1{ font-size: 2rem; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">GiyasPDFTools</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" aria-current="page" href="#">Home</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#features">Fitur</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="hero-section">
+        <div class="container">
+            <span class="hero-eyebrow"><span class="dot"></span> Siap memproses dokumen Anda</span>
+            <h1 class="display-4">Solusi PDF & Dokumen</h1>
+            <p class="lead">Konversi, gabung, pisah, dan edit dokumen — semuanya dalam satu panel, tanpa instalasi tambahan.</p>
+        </div>
+    </div>
+
+    <div class="container alert-messages">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+    </div>
+
+    <div class="container" id="features">
+        <h2 class="mb-5">Pilih Fitur yang Anda Inginkan</h2>
+        <div class="row row-cols-1 row-cols-md-2 row-cols-lg-4 g-4">
+
+            <div class="col">
+                <div class="card card-feature" data-cat="convert" data-bs-toggle="modal" data-bs-target="#converterModal">
+                    <div class="card-body text-center">
+                        <span class="card-tag">Convert</span>
+                        <i class="fas fa-exchange-alt icon"></i>
+                        <h5 class="card-title">Konversi File</h5>
+                        <p class="card-text">Word, PDF, JPG, dll.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col">
+                <div class="card card-feature" data-cat="edit" data-bs-toggle="modal" data-bs-target="#mergePdfModal">
+                    <div class="card-body text-center">
+                        <span class="card-tag">Edit</span>
+                        <i class="fas fa-compress-arrows-alt icon"></i>
+                        <h5 class="card-title">Gabung PDF</h5>
+                        <p class="card-text">Satukan beberapa PDF.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col">
+                <div class="card card-feature" data-cat="edit" data-bs-toggle="modal" data-bs-target="#splitPdfModal">
+                    <div class="card-body text-center">
+                        <span class="card-tag">Edit</span>
+                        <i class="fas fa-cut icon"></i>
+                        <h5 class="card-title">Pisah PDF</h5>
+                        <p class="card-text">Ekstrak halaman PDF.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col">
+                <div class="card card-feature" data-cat="edit" data-bs-toggle="modal" data-bs-target="#watermarkPdfModal">
+                    <div class="card-body text-center">
+                        <span class="card-tag">Edit</span>
+                        <i class="fas fa-tint icon"></i>
+                        <h5 class="card-title">Tambah Watermark</h5>
+                        <p class="card-text">Beri watermark pada PDF.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col">
+                <div class="card card-feature" data-cat="convert" data-bs-toggle="modal" data-bs-target="#pdfToJpgModal">
+                    <div class="card-body text-center">
+                        <span class="card-tag">Convert</span>
+                        <i class="fas fa-file-image icon"></i>
+                        <h5 class="card-title">PDF ke JPG</h5>
+                        <p class="card-text">Ubah PDF menjadi gambar.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col">
+                <div class="card card-feature" data-cat="convert" data-bs-toggle="modal" data-bs-target="#excelToPdfModal">
+                    <div class="card-body text-center">
+                        <span class="card-tag">Convert</span>
+                        <i class="fas fa-file-excel icon"></i>
+                        <h5 class="card-title">Excel ke PDF</h5>
+                        <p class="card-text">Ubah Excel menjadi PDF.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col">
+                <div class="card card-feature" data-cat="convert" data-bs-toggle="modal" data-bs-target="#pdfToExcelModal">
+                    <div class="card-body text-center">
+                        <span class="card-tag">Convert</span>
+                        <i class="fas fa-table icon"></i>
+                        <h5 class="card-title">PDF ke Excel</h5>
+                        <p class="card-text">Ekstrak tabel dari PDF.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col">
+                <div class="card card-feature" data-cat="optimize" data-bs-toggle="modal" data-bs-target="#compressPdfModal">
+                    <div class="card-body text-center">
+                        <span class="card-tag">Optimize</span>
+                        <i class="fas fa-file-archive icon"></i>
+                        <h5 class="card-title">Kompres PDF</h5>
+                        <p class="card-text">Perkecil ukuran file PDF Anda dengan tetap menjaga kualitas.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col">
+                <div class="card card-feature" data-cat="optimize" data-bs-toggle="modal" data-bs-target="#compressImageModal">
+                    <div class="card-body text-center">
+                        <span class="card-tag">Optimize</span>
+                        <i class="fas fa-image icon"></i>
+                        <h5 class="card-title">Kompres Foto</h5>
+                        <p class="card-text">Perkecil ukuran file gambar JPG/PNG Anda.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col">
+                <div class="card card-feature" data-cat="convert" data-bs-toggle="modal" data-bs-target="#pptxToPdfModal">
+                    <div class="card-body text-center">
+                        <span class="card-tag">Convert</span>
+                        <i class="fas fa-file-powerpoint icon"></i>
+                        <h5 class="card-title">PowerPoint ke PDF</h5>
+                        <p class="card-text">Ubah presentasi PPTX menjadi dokumen PDF.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col">
+                <div class="card card-feature" data-cat="convert" data-bs-toggle="modal" data-bs-target="#pdfToPptxModal">
+                    <div class="card-body text-center">
+                        <span class="card-tag">Convert</span>
+                        <i class="fas fa-file-import icon"></i>
+                        <h5 class="card-title">PDF ke PowerPoint</h5>
+                        <p class="card-text">Ubah halaman PDF menjadi slide PowerPoint.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col">
+                <div class="card card-feature" data-cat="convert" data-bs-toggle="modal" data-bs-target="#spreadsheetModal">
+                    <div class="card-body text-center">
+                        <span class="card-tag">Convert</span>
+                        <i class="fas fa-file-csv icon"></i>
+                        <h5 class="card-title">Konversi Spreadsheet</h5>
+                        <p class="card-text">Ubah XLSX ↔ CSV.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="converterModal" tabindex="-1" aria-labelledby="converterModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header gp-amber">
+                    <h5 class="modal-title" id="converterModalLabel"><i class="fas fa-exchange-alt"></i> Konversi File</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form action="/convert" method="post" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label for="file_convert" class="form-label">1. Pilih File</label>
+                            <input class="form-control" type="file" id="file_convert" name="file" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="conversion" class="form-label">2. Konversi Ke Format</label>
+                            <select class="form-select" name="conversion" id="conversion" required>
+                                <option value="word-to-pdf">Word (.docx) → PDF (.pdf)</option>
+                                <option value="pdf-to-word">PDF (.pdf) → Word (.docx)</option>
+                                <option value="jpg-to-pdf">JPG (.jpg) → PDF (.pdf)</option>
+                            </select>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="gp-btn gp-amber-btn">Konversi Sekarang!</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="mergePdfModal" tabindex="-1" aria-labelledby="mergePdfModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header gp-teal">
+                    <h5 class="modal-title" id="mergePdfModalLabel"><i class="fas fa-compress-arrows-alt"></i> Gabung PDF</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form action="/merge_pdf" method="post" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label for="files_merge" class="form-label">1. Pilih File-file PDF (minimal 2)</label>
+                            <input class="form-control" type="file" id="files_merge" name="files[]" multiple required accept=".pdf">
+                            <small class="text-muted">Pilih beberapa file PDF sekaligus.</small>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="gp-btn gp-teal-btn">Gabung PDF!</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="splitPdfModal" tabindex="-1" aria-labelledby="splitPdfModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header gp-teal">
+                    <h5 class="modal-title" id="splitPdfModalLabel"><i class="fas fa-cut"></i> Pisah PDF</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form action="/split_pdf" method="post" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label for="file_split" class="form-label">1. Pilih File PDF</label>
+                            <input class="form-control" type="file" id="file_split" name="file" required accept=".pdf">
+                        </div>
+                        <div class="mb-3">
+                            <label for="pages_to_extract" class="form-label">2. Halaman yang Ingin Dipisah</label>
+                            <input type="text" class="form-control" id="pages_to_extract" name="pages" placeholder="Contoh: 1-5, 8, 10-12" required>
+                            <small class="text-muted">Pisahkan dengan koma atau gunakan tanda hubung untuk rentang halaman.</small>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="gp-btn gp-teal-btn">Pisah PDF!</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="watermarkPdfModal" tabindex="-1" aria-labelledby="watermarkPdfModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header gp-teal">
+                    <h5 class="modal-title" id="watermarkPdfModalLabel"><i class="fas fa-tint"></i> Tambah Watermark</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form action="/add_watermark" method="post" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label for="file_watermark" class="form-label">1. Pilih File PDF</label>
+                            <input class="form-control" type="file" id="file_watermark" name="file" required accept=".pdf">
+                        </div>
+                        <div class="mb-3">
+                            <label for="watermark_text" class="form-label">2. Teks Watermark</label>
+                            <input type="text" class="form-control" id="watermark_text" name="watermark_text" value="Mohamad Giyas" required>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="gp-btn gp-teal-btn">Tambahkan Watermark!</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="pdfToJpgModal" tabindex="-1" aria-labelledby="pdfToJpgModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header gp-amber">
+                    <h5 class="modal-title" id="pdfToJpgModalLabel"><i class="fas fa-file-image"></i> PDF ke JPG</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form action="/pdf_to_jpg" method="post" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label for="file_pdf_to_jpg" class="form-label">Pilih File PDF</label>
+                            <input class="form-control" type="file" id="file_pdf_to_jpg" name="file" required accept=".pdf">
+                            <small class="text-muted">Setiap halaman akan menjadi satu file JPG.</small>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="gp-btn gp-amber-btn">Konversi ke JPG!</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="excelToPdfModal" tabindex="-1" aria-labelledby="excelToPdfModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header gp-amber">
+                    <h5 class="modal-title" id="excelToPdfModalLabel"><i class="fas fa-file-excel"></i> Excel ke PDF</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form action="/excel_to_pdf" method="post" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label for="file_excel_to_pdf" class="form-label">Pilih File Excel (.xlsx)</label>
+                            <input class="form-control" type="file" id="file_excel_to_pdf" name="file" required accept=".xlsx, .xls">
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="gp-btn gp-amber-btn">Konversi ke PDF!</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="pdfToExcelModal" tabindex="-1" aria-labelledby="pdfToExcelModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header gp-amber">
+                    <h5 class="modal-title" id="pdfToExcelModalLabel"><i class="fas fa-table"></i> PDF ke Excel</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form action="/pdf_to_excel" method="post" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label for="file_pdf_to_excel" class="form-label">Pilih File PDF</label>
+                            <input class="form-control" type="file" id="file_pdf_to_excel" name="file" required accept=".pdf">
+                            <small class="text-muted">Hasil terbaik untuk PDF dengan struktur tabel yang jelas.</small>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="gp-btn gp-amber-btn">Ekstrak ke Excel!</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="spreadsheetModal" tabindex="-1" aria-labelledby="spreadsheetModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header gp-amber">
+                    <h5 class="modal-title" id="spreadsheetModalLabel"><i class="fas fa-file-csv"></i> Konversi Spreadsheet</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form action="/convert_spreadsheet" method="post" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label for="file_spreadsheet" class="form-label">1. Pilih File</label>
+                            <input class="form-control" type="file" id="file_spreadsheet" name="file" required accept=".xlsx,.xls,.csv">
+                        </div>
+                        <div class="mb-3">
+                            <label for="conversion_spreadsheet" class="form-label">2. Pilih Konversi</label>
+                            <select class="form-select" name="conversion" id="conversion_spreadsheet" required>
+                                <option value="excel-to-csv">Excel (.xlsx) → CSV (.csv)</option>
+                                <option value="csv-to-excel">CSV (.csv) → Excel (.xlsx)</option>
+                            </select>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="gp-btn gp-amber-btn">Konversi!</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="compressPdfModal" tabindex="-1" aria-labelledby="compressPdfModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header gp-rose">
+                    <h5 class="modal-title" id="compressPdfModalLabel"><i class="fas fa-file-archive"></i> Kompres PDF</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form action="/compress_pdf" method="post" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label for="file_compress" class="form-label">Pilih File PDF</label>
+                            <input class="form-control" type="file" id="file_compress" name="file" required accept=".pdf">
+                            <small class="text-muted">Ukuran akan diperkecil dengan kualitas optimal.</small>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="gp-btn gp-rose-btn">Kompres PDF!</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="compressImageModal" tabindex="-1" aria-labelledby="compressImageModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header gp-rose">
+                    <h5 class="modal-title" id="compressImageModalLabel"><i class="fas fa-image"></i> Kompres Foto</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form action="/compress_image" method="post" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label for="file_compress_image" class="form-label">Pilih File Gambar (JPG/PNG)</label>
+                            <input class="form-control" type="file" id="file_compress_image" name="file" required accept=".jpg,.jpeg,.png">
+                        </div>
+                        <div class="mb-3">
+                            <label for="image_quality" class="form-label">Kualitas Gambar (untuk JPG): <span id="qualityValue">85%</span></label>
+                            <input type="range" class="form-range" id="image_quality" name="quality" min="10" max="100" value="85" oninput="document.getElementById('qualityValue').innerText = this.value + '%'">
+                            <small class="text-muted">Semakin kecil nilai, semakin kecil ukuran file (kualitas menurun).</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="image_resize_percent" class="form-label">Ubah Ukuran (Resize): <span id="resizeValue">100%</span></label>
+                            <input type="range" class="form-range" id="image_resize_percent" name="resize_percent" min="10" max="100" value="100" oninput="document.getElementById('resizeValue').innerText = this.value + '%'">
+                            <small class="text-muted">Kurangi persentase untuk mengecilkan dimensi fisik gambar.</small>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="gp-btn gp-rose-btn">Kompres Foto!</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="pptxToPdfModal" tabindex="-1" aria-labelledby="pptxToPdfModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header gp-amber">
+                    <h5 class="modal-title" id="pptxToPdfModalLabel"><i class="fas fa-file-powerpoint"></i> PowerPoint ke PDF</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form action="/pptx_to_pdf" method="post" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label for="file_pptx_to_pdf" class="form-label">Pilih File PowerPoint (.pptx)</label>
+                            <input class="form-control" type="file" id="file_pptx_to_pdf" name="file" required accept=".pptx, .ppt">
+                            <small class="text-muted">Membutuhkan Microsoft PowerPoint terinstall (hanya Windows).</small>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="gp-btn gp-amber-btn">Konversi ke PDF!</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="pdfToPptxModal" tabindex="-1" aria-labelledby="pdfToPptxModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header gp-amber">
+                    <h5 class="modal-title" id="pdfToPptxModalLabel"><i class="fas fa-file-import"></i> PDF ke PowerPoint</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form action="/pdf_to_pptx" method="post" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label for="file_pdf_to_pptx" class="form-label">Pilih File PDF</label>
+                            <input class="form-control" type="file" id="file_pdf_to_pptx" name="file" required accept=".pdf">
+                            <small class="text-muted">Setiap halaman PDF akan menjadi satu slide gambar di PPTX.</small>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="gp-btn gp-amber-btn">Konversi ke PowerPoint!</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2025 GiyasPDFTools.<br>Dibuat oleh Mohamad Giyas.</p>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const allForms = document.querySelectorAll('.modal form');
+
+            allForms.forEach(form => {
+                form.addEventListener('submit', function(event) {
+                    event.preventDefault();
+
+                    const submitButton = form.querySelector('button[type="submit"]');
+                    const originalButtonText = submitButton.innerHTML;
+                    const modalElement = form.closest('.modal');
+                    const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+
+                    submitButton.disabled = true;
+                    submitButton.innerHTML = `
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        Memproses...
+                    `;
+
+                    const existingError = form.querySelector('.form-error-message');
+                    if (existingError) {
+                        existingError.remove();
+                    }
+
+                    const formData = new FormData(form);
+                    fetch(form.action, {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            return response.text().then(text => {
+                                const doc = new DOMParser().parseFromString(text, "text/html");
+                                const alertElement = doc.querySelector('.alert-danger, .alert-warning');
+                                const message = alertElement ? alertElement.textContent.trim() : 'Terjadi kesalahan di server.';
+                                throw new Error(message);
+                            });
+                        }
+                        const disposition = response.headers.get('Content-Disposition');
+                        let filename = 'downloaded_file';
+                        if (disposition && disposition.indexOf('attachment') !== -1) {
+                            const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+                            const matches = filenameRegex.exec(disposition);
+                            if (matches != null && matches[1]) {
+                                filename = decodeURI(matches[1].replace(/['"]/g, ''));
+                            }
+                        }
+                        return response.blob().then(blob => ({ blob, filename }));
+                    })
+                    .then(({ blob, filename }) => {
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.style.display = 'none';
+                        a.href = url;
+                        a.download = filename;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        a.remove();
+
+                        submitButton.classList.add('btn-success');
+                        submitButton.innerHTML = '<i class="fas fa-check-circle"></i> Berhasil!';
+
+                        setTimeout(() => {
+                            if(modal) {
+                                modal.hide();
+                            }
+                            submitButton.disabled = false;
+                            submitButton.innerHTML = originalButtonText;
+                            submitButton.classList.remove('btn-success');
+                            form.reset();
+                        }, 1500);
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        submitButton.disabled = false;
+                        submitButton.classList.add('btn-danger');
+                        submitButton.innerHTML = `<i class="fas fa-times-circle"></i> Gagal!`;
+
+                        let errorDiv = form.querySelector('.form-error-message');
+                        if (!errorDiv) {
+                            errorDiv = document.createElement('div');
+                            errorDiv.className = 'form-error-message text-danger mt-2';
+                            submitButton.parentElement.appendChild(errorDiv);
+                        }
+                        errorDiv.textContent = error.message;
+                    });
+                });
+            });
+        });
+    </script>
+</body>
+</html>
