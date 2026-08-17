@@ -2,17 +2,20 @@ import os
 import sys
 import zipfile
 import subprocess
+import shutil
+import uuid
+import threading
+import time
 
 # Flask and Werkzeug
 from flask import (Flask, render_template, request, send_file, 
-                   flash, redirect, url_for, after_this_request, jsonify)
+                   flash, redirect, url_for, jsonify)
 from werkzeug.utils import secure_filename
 
 # PDF and Document Libraries
 import PyPDF2
 import fitz  # PyMuPDF
 import pdfplumber
-from docx2pdf import convert as convert_word_to_pdf
 from pdf2docx import Converter
 
 # Image Library
@@ -30,18 +33,20 @@ from reportlab.lib.units import cm
 from reportlab.lib.colors import Color as ReportLabColor
 
 # PowerPoint Libraries
-import comtypes.client
 from pptx import Presentation
 from pptx.util import Inches
 
 # Ghostscript Library (pastikan di-import, meskipun tidak dipanggil langsung)
-import ghostscript 
 
 # ==============================================================================
 # 1. KONFIGURASI APLIKASI
 # ==============================================================================
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'kunci-rahasia-super-aman-giyas'
+app.config['SECRET_KEY'] = os.environ.get(
+    'SECRET_KEY',
+    'kunci-rahasia-super-aman-giyas'
+)
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 UPLOAD_FOLDER = 'uploads'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
@@ -51,6 +56,107 @@ if not os.path.exists(UPLOAD_FOLDER):
 def allowed_file(filename, allowed_extensions):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in allowed_extensions
+
+
+def cleanup_stale_files():
+    """
+    Membersihkan file sisa dari proses sebelumnya.
+    File yang sedang dikunci akan dilewati.
+    """
+    for folder in [UPLOAD_FOLDER]:
+        if not os.path.exists(folder):
+            continue
+
+        for filename in os.listdir(folder):
+            path = os.path.join(folder, filename)
+
+            if not os.path.isfile(path):
+                continue
+
+            try:
+                os.remove(path)
+            except (PermissionError, OSError):
+                # File yang masih digunakan tidak dipaksakan untuk dihapus.
+                pass
+
+
+def send_file_with_cleanup(file_path, download_name, cleanup_paths):
+    """
+    Mengirim file lalu membersihkannya setelah response selesai.
+
+    Pada Windows, beberapa library seperti pdf2docx/PyMuPDF dan file
+    response Flask dapat melepas file handle sedikit setelah callback
+    response dipanggil. Karena itu cleanup dijalankan di background
+    dengan delay awal, lalu retry beberapa kali.
+    """
+
+    response = send_file(
+        file_path,
+        as_attachment=True,
+        download_name=download_name
+    )
+
+    def cleanup():
+        # Beri waktu agar file handle milik Flask/browser/library benar-benar
+        # dilepas sebelum Windows mencoba menghapus file.
+        time.sleep(2.0)
+
+        paths = [path for path in cleanup_paths if path]
+
+        for attempt in range(20):
+            remaining = []
+
+            for path in paths:
+                if not os.path.exists(path):
+                    continue
+
+                try:
+                    os.remove(path)
+                    print(f"File cleanup berhasil: {path}")
+
+                except PermissionError:
+                    remaining.append(path)
+                    print(
+                        f"File masih digunakan, percobaan "
+                        f"{attempt + 1}/20: {path}"
+                    )
+
+                except OSError as error:
+                    if getattr(error, "winerror", None) == 32:
+                        remaining.append(path)
+                        print(
+                            f"File masih terkunci, percobaan "
+                            f"{attempt + 1}/20: {path}"
+                        )
+                    else:
+                        print(
+                            f"Gagal menghapus file {path}: {error}"
+                        )
+
+            if not remaining:
+                return
+
+            paths = remaining
+            time.sleep(0.5)
+
+        for path in paths:
+            if os.path.exists(path):
+                print(
+                    f"File belum dapat dihapus setelah 20 percobaan: {path}"
+                )
+
+    def start_cleanup():
+        # Jalankan cleanup di thread terpisah supaya proses pengiriman
+        # response tidak tertahan oleh retry cleanup.
+        thread = threading.Thread(
+            target=cleanup,
+            daemon=True
+        )
+        thread.start()
+
+    response.call_on_close(start_cleanup)
+    return response
+
 
 # ==============================================================================
 # 2. ROUTE UTAMA
@@ -86,6 +192,15 @@ def convert():
 
     try:
         if conversion_type == 'word-to-pdf':
+            if sys.platform != 'win32':
+                raise RuntimeError(
+                    'Fitur Word ke PDF pada versi lokal ini membutuhkan '
+                    'Microsoft Word di Windows.'
+                )
+
+            import comtypes
+            from docx2pdf import convert as convert_word_to_pdf
+
             comtypes.CoInitialize()
             try:
                 output_filename = filename.replace('.docx', '.pdf')
@@ -110,16 +225,11 @@ def convert():
         else:
             return jsonify({'error': 'Tipe konversi tidak valid.'}), 400
 
-        @after_this_request
-        def cleanup(response):
-            try:
-                if os.path.exists(input_path): os.remove(input_path)
-                if os.path.exists(output_path): os.remove(output_path)
-            except Exception as e:
-                print(f"Error cleaning up files: {e}")
-            return response
-        
-        return send_file(output_path, as_attachment=True, download_name=output_filename)
+        return send_file_with_cleanup(
+            output_path,
+            output_filename,
+            [input_path, output_path]
+        )
 
     except Exception as e:
         if os.path.exists(input_path):
@@ -131,45 +241,92 @@ def convert():
 @app.route('/merge_pdf', methods=['POST'])
 def merge_pdf():
     files = request.files.getlist('files[]')
+
     if len(files) < 2:
-        flash('Pilih minimal 2 file PDF untuk digabungkan.', 'danger')
+        flash('Pilih minimal 2 file untuk digabungkan.', 'danger')
         return redirect(url_for('index'))
 
     input_paths = []
+    temp_pdf_paths = []
     output_path = ""
 
     try:
         merger = PyPDF2.PdfMerger()
+
         for file in files:
-            if file and allowed_file(file.filename, {'pdf'}):
-                filename = secure_filename(file.filename)
-                input_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                file.save(input_path)
-                input_paths.append(input_path)
+
+            if not file or file.filename == "":
+                continue
+
+            filename = secure_filename(file.filename)
+            extension = filename.rsplit('.', 1)[1].lower()
+
+            input_path = os.path.join(
+                app.config['UPLOAD_FOLDER'],
+                f"{uuid.uuid4()}_{filename}"
+            )
+
+            file.save(input_path)
+            input_paths.append(input_path)
+
+            # ===========================
+            # Jika file PDF
+            # ===========================
+            if extension == "pdf":
                 merger.append(input_path)
-        
+
+            # ===========================
+            # Jika file gambar
+            # ===========================
+            elif extension in ["jpg", "jpeg", "png", "bmp", "webp"]:
+
+                img = Image.open(input_path)
+
+                if img.mode != "RGB":
+                    img = img.convert("RGB")
+
+                temp_pdf = os.path.join(
+                    app.config['UPLOAD_FOLDER'],
+                    f"{uuid.uuid4()}.pdf"
+                )
+
+                img.save(temp_pdf)
+
+                temp_pdf_paths.append(temp_pdf)
+
+                merger.append(temp_pdf)
+
+            else:
+                continue
+
         output_filename = "merged_document.pdf"
-        output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
+
+        output_path = os.path.join(
+            app.config['UPLOAD_FOLDER'],
+            output_filename
+        )
+
         merger.write(output_path)
         merger.close()
-        del merger 
-        
-        @after_this_request
-        def cleanup(response):
-            all_paths = input_paths + [output_path]
-            for path in all_paths:
-                try:
-                    if os.path.exists(path): os.remove(path)
-                except Exception as e:
-                    print(f"Gagal menghapus file {path}: {e}")
-            return response
-            
-        return send_file(output_path, as_attachment=True, download_name=output_filename)
+
+        return send_file_with_cleanup(
+            output_path,
+            output_filename,
+            input_paths + temp_pdf_paths + [output_path]
+        )
 
     except Exception as e:
-        flash(f"Terjadi kesalahan saat menggabungkan PDF: {e}", 'danger')
-        return redirect(url_for('index'))
 
+        for path in input_paths + temp_pdf_paths:
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except:
+                pass
+
+        flash(f"Terjadi kesalahan saat menggabungkan file: {e}", "danger")
+        return redirect(url_for('index'))
+    
 # Fitur 3.3: Pisah PDF
 @app.route('/split_pdf', methods=['POST'])
 def split_pdf():
@@ -209,16 +366,11 @@ def split_pdf():
         with open(output_path, 'wb') as f:
             writer.write(f)
         
-        @after_this_request
-        def cleanup(response):
-            try:
-                if os.path.exists(input_path): os.remove(input_path)
-                if os.path.exists(output_path): os.remove(output_path)
-            except Exception as e:
-                print(f"Gagal menghapus file: {e}")
-            return response
-
-        return send_file(output_path, as_attachment=True, download_name=output_filename)
+        return send_file_with_cleanup(
+            output_path,
+            output_filename,
+            [input_path, output_path]
+        )
 
     except Exception as e:
         flash(f"Terjadi kesalahan saat memisah PDF: {e}", 'danger')
@@ -241,10 +393,13 @@ def add_watermark():
     
     try:
         c = canvas.Canvas(temp_watermark_pdf, pagesize=letter)
+        page_width, page_height = letter
         c.setFont('Helvetica-Bold', 40)
         c.setFillColor(ReportLabColor(0.8, 0.8, 0.8, alpha=0.5))
+        c.translate(page_width/2, page_height/2)
         c.rotate(45)
-        c.drawString(letter[0]/4, letter[1]/4, watermark_text)
+        text_width = c.stringWidth(watermark_text, 'Helvetica-Bold', 40)
+        c.drawString(-text_width/2, -20, watermark_text)
         c.save()
 
         reader = PyPDF2.PdfReader(input_path)
@@ -261,17 +416,11 @@ def add_watermark():
         with open(output_path, 'wb') as f:
             writer.write(f)
         
-        @after_this_request
-        def cleanup(response):
-            all_paths = [input_path, temp_watermark_pdf, output_path]
-            for path in all_paths:
-                try:
-                    if os.path.exists(path): os.remove(path)
-                except Exception as e:
-                    print(f"Gagal menghapus file: {e}")
-            return response
-
-        return send_file(output_path, as_attachment=True, download_name=output_filename)
+        return send_file_with_cleanup(
+            output_path,
+            output_filename,
+            [input_path, temp_watermark_pdf, output_path]
+        )
 
     except Exception as e:
         flash(f"Terjadi kesalahan saat menambahkan watermark: {e}", 'danger')
@@ -307,17 +456,11 @@ def pdf_to_jpg():
             for image_path in image_paths:
                 zipf.write(image_path, os.path.basename(image_path))
         
-        @after_this_request
-        def cleanup(response):
-            all_paths = [input_path, output_zip_path] + image_paths
-            for path in all_paths:
-                try:
-                    if os.path.exists(path): os.remove(path)
-                except Exception as e:
-                    print(f"Gagal menghapus file {path}: {e}")
-            return response
-        
-        return send_file(output_zip_path, as_attachment=True, download_name=output_zip_filename)
+        return send_file_with_cleanup(
+            output_zip_path,
+            output_zip_filename,
+            [input_path, output_zip_path] + image_paths
+        )
 
     except Exception as e:
         flash(f"Terjadi kesalahan saat konversi PDF ke JPG: {e}", 'danger')
@@ -353,16 +496,11 @@ def excel_to_pdf():
         table.setStyle(style)
         doc.build([table])
         
-        @after_this_request
-        def cleanup(response):
-            try:
-                if os.path.exists(input_path): os.remove(input_path)
-                if os.path.exists(output_path): os.remove(output_path)
-            except Exception as e:
-                print(f"Gagal menghapus file: {e}")
-            return response
-        
-        return send_file(output_path, as_attachment=True, download_name=output_filename)
+        return send_file_with_cleanup(
+            output_path,
+            output_filename,
+            [input_path, output_path]
+        )
 
     except Exception as e:
         flash(f"Terjadi kesalahan saat konversi Excel ke PDF: {e}", 'danger')
@@ -399,16 +537,11 @@ def pdf_to_excel():
             for i, df in enumerate(all_tables):
                 df.to_excel(writer, sheet_name=f'Tabel_{i+1}', index=False)
 
-        @after_this_request
-        def cleanup(response):
-            try:
-                if os.path.exists(input_path): os.remove(input_path)
-                if os.path.exists(output_path): os.remove(output_path)
-            except Exception as e:
-                print(f"Gagal menghapus file: {e}")
-            return response
-        
-        return send_file(output_path, as_attachment=True, download_name=output_filename)
+        return send_file_with_cleanup(
+            output_path,
+            output_filename,
+            [input_path, output_path]
+        )
 
     except Exception as e:
         flash(f"Terjadi kesalahan saat konversi PDF ke Excel: {e}", 'danger')
@@ -440,16 +573,11 @@ def convert_spreadsheet():
             output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
             df.to_excel(output_path, index=False, engine='openpyxl')
         
-        @after_this_request
-        def cleanup(response):
-            try:
-                if os.path.exists(input_path): os.remove(input_path)
-                if os.path.exists(output_path): os.remove(output_path)
-            except Exception as e:
-                print(f"Gagal menghapus file: {e}")
-            return response
-        
-        return send_file(output_path, as_attachment=True, download_name=output_filename)
+        return send_file_with_cleanup(
+            output_path,
+            output_filename,
+            [input_path, output_path]
+        )
 
     except Exception as e:
         flash(f"Terjadi kesalahan saat konversi: {e}", 'danger')
@@ -470,24 +598,36 @@ def compress_pdf():
     output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
 
     try:
+        gs_executable = shutil.which(
+            'gswin64c' if sys.platform == 'win32' else 'gs'
+        )
+
+        if not gs_executable:
+            flash(
+                'Ghostscript tidak tersedia di environment ini. '
+                'Fitur kompres PDF membutuhkan Ghostscript.',
+                'danger'
+            )
+            return redirect(url_for('index'))
+
         gs_command = [
-            'gswin64c' if sys.platform == 'win32' else 'gs',
-            '-sDEVICE=pdfwrite', '-dCompatibilityLevel=1.4',
-            '-dPDFSETTINGS=/ebook', '-dNOPAUSE', '-dQUIET', '-dBATCH',
-            f'-sOutputFile={output_path}', input_path
+            gs_executable,
+            '-sDEVICE=pdfwrite',
+            '-dCompatibilityLevel=1.4',
+            '-dPDFSETTINGS=/ebook',
+            '-dNOPAUSE',
+            '-dQUIET',
+            '-dBATCH',
+            f'-sOutputFile={output_path}',
+            input_path
         ]
         subprocess.run(gs_command, check=True)
         
-        @after_this_request
-        def cleanup(response):
-            try:
-                if os.path.exists(input_path): os.remove(input_path)
-                if os.path.exists(output_path): os.remove(output_path)
-            except Exception as e:
-                print(f"Gagal menghapus file: {e}")
-            return response
-        
-        return send_file(output_path, as_attachment=True, download_name=output_filename)
+        return send_file_with_cleanup(
+            output_path,
+            output_filename,
+            [input_path, output_path]
+        )
 
     except subprocess.CalledProcessError:
         flash('Gagal menjalankan Ghostscript. Pastikan sudah terinstal dan ditambahkan ke PATH sistem.', 'danger')
@@ -527,16 +667,11 @@ def compress_image():
         else:
             img.save(output_path, optimize=True)
         
-        @after_this_request
-        def cleanup(response):
-            try:
-                if os.path.exists(input_path): os.remove(input_path)
-                if os.path.exists(output_path): os.remove(output_path)
-            except Exception as e:
-                print(f"Gagal menghapus file: {e}")
-            return response
-        
-        return send_file(output_path, as_attachment=True, download_name=output_filename)
+        return send_file_with_cleanup(
+            output_path,
+            output_filename,
+            [input_path, output_path]
+        )
 
     except Exception as e:
         flash(f"Terjadi kesalahan saat kompresi foto: {e}", 'danger')
@@ -562,30 +697,35 @@ def pptx_to_pdf():
     powerpoint = None
     
     try:
+        import comtypes
+        import comtypes.client
+
         comtypes.CoInitialize()
         powerpoint = comtypes.client.CreateObject("Powerpoint.Application")
         deck = powerpoint.Presentations.Open(os.path.abspath(input_path))
         deck.SaveAs(os.path.abspath(output_path), 32)
         deck.Close()
         
-        @after_this_request
-        def cleanup(response):
-            try:
-                if os.path.exists(input_path): os.remove(input_path)
-                if os.path.exists(output_path): os.remove(output_path)
-            except Exception as e:
-                print(f"Gagal menghapus file: {e}")
-            return response
-        
-        return send_file(output_path, as_attachment=True, download_name=output_filename)
+        return send_file_with_cleanup(
+            output_path,
+            output_filename,
+            [input_path, output_path]
+        )
 
     except Exception as e:
         flash(f"Terjadi kesalahan saat konversi. Pastikan PowerPoint terinstall. Error: {e}", 'danger')
         return redirect(url_for('index'))
     finally:
         if powerpoint:
-            powerpoint.Quit()
-        comtypes.CoUninitialize()
+            try:
+                powerpoint.Quit()
+            except Exception:
+                pass
+
+        try:
+            comtypes.CoUninitialize()
+        except Exception:
+            pass
 
 # Fitur 3.12: PDF ke PowerPoint
 @app.route('/pdf_to_pptx', methods=['POST'])
@@ -622,24 +762,35 @@ def pdf_to_pptx():
         
         prs.save(output_path)
         
-        @after_this_request
-        def cleanup(response):
-            all_paths = [input_path, output_path] + image_paths
-            for path in all_paths:
-                try:
-                    if os.path.exists(path): os.remove(path)
-                except Exception as e:
-                    print(f"Gagal menghapus file {path}: {e}")
-            return response
-
-        return send_file(output_path, as_attachment=True, download_name=output_filename)
+        return send_file_with_cleanup(
+            output_path,
+            output_filename,
+            [input_path, output_path] + image_paths
+        )
 
     except Exception as e:
         flash(f"Terjadi kesalahan saat konversi PDF ke PPTX: {e}", 'danger')
         return redirect(url_for('index'))
 
 # ==============================================================================
+# ERROR HANDLER
+# ==============================================================================
+
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    return jsonify({
+        'error': 'Ukuran file terlalu besar. Maksimal 50 MB.'
+    }), 413
+
+
+# ==============================================================================
 # 4. MENJALANKAN APLIKASI
 # ==============================================================================
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    cleanup_stale_files()
+    port = int(os.environ.get('PORT', 5000))
+    app.run(
+        host='0.0.0.0',
+        port=port,
+        debug=False
+    )
