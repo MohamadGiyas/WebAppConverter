@@ -542,9 +542,22 @@
                 <div class="modal-body">
                     <form action="/merge_pdf" method="post" enctype="multipart/form-data">
                         <div class="mb-3">
-                            <label for="files_merge" class="form-label">1. Pilih File-file PDF (minimal 2)</label>
-                            <input class="form-control" type="file" id="files_merge" name="files[]" multiple required accept=".pdf">
-                            <small class="text-muted">Pilih beberapa file PDF sekaligus.</small>
+                            <label for="files_merge" class="form-label">
+                                1. Pilih File (PDF / JPG / PNG / WEBP / BMP)
+                            </label>
+
+                            <input
+                                class="form-control"
+                                type="file"
+                                id="files_merge"
+                                name="files[]"
+                                multiple
+                                required
+                                accept=".pdf,.jpg,.jpeg,.png,.webp,.bmp">
+
+                            <small class="text-muted">
+                                Anda dapat memilih beberapa PDF maupun gambar sekaligus. Semua file akan digabung menjadi satu PDF.
+                            </small>
                         </div>
                         <div class="d-grid">
                             <button type="submit" class="gp-btn gp-teal-btn">Gabung PDF!</button>
